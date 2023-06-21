@@ -5,21 +5,21 @@ from utils import EPSILON
 
 class Cube:
     def __init__(self, position, scale, material_index):
-        self.position = position
+        self.position = np.array(position)
         self.scale = scale
         self.material_index = material_index
         self.min_cords = self.position - (self.scale / 2, self.scale / 2, self.scale / 2)
         self.max_cords = self.position + (self.scale / 2, self.scale / 2, self.scale / 2)
 
     def intersect(self, ray):
-        t_min = (self.min_cords[0] - ray.starting_position[0]) / ray.V[0]
-        t_max = (self.max_cords[0] - ray.starting_position[0]) / ray.V[0]
+        t_min = (self.min_cords[0] - ray.starting_pos[0]) / ray.V[0]
+        t_max = (self.max_cords[0] - ray.starting_pos[0]) / ray.V[0]
 
         if t_min > t_max:
             t_min, t_max = t_max, t_min
 
-        ty_min = (self.min_cords[1] - ray.starting_position[1]) / ray.V[1]
-        ty_max = (self.max_cords[1] - ray.starting_position[1]) / ray.V[1]
+        ty_min = (self.min_cords[1] - ray.starting_pos[1]) / ray.V[1]
+        ty_max = (self.max_cords[1] - ray.starting_pos[1]) / ray.V[1]
 
         if ty_min > ty_max:
             ty_min, ty_max = ty_max, ty_min
@@ -33,8 +33,8 @@ class Cube:
         if ty_max < t_max:
             t_max = ty_max
 
-        tz_min = (self.min_cords[2] - ray.starting_position[2]) / ray.V[2]
-        tz_max = (self.max_cords[2] - ray.starting_position[2]) / ray.V[2]
+        tz_min = (self.min_cords[2] - ray.starting_pos[2]) / ray.V[2]
+        tz_max = (self.max_cords[2] - ray.starting_pos[2]) / ray.V[2]
 
         if tz_min > tz_max:
             tz_min, tz_max = tz_max, tz_min

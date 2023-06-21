@@ -6,13 +6,13 @@ from utils import normalize
 
 class Sphere:
     def __init__(self, position, radius, material_index):
-        self.position = position
+        self.position = np.array(position)
         self.radius = radius
         self.material_index = material_index
 
     def intersect(self, ray):
-        L = self.position - ray.starting_position
-        t_ca = np.dot(L, ray.v)
+        L = self.position - ray.starting_pos
+        t_ca = np.dot(L, ray.V)
         if t_ca < 0:
             return None
 
