@@ -48,21 +48,21 @@ class Cube:
         return t_min
 
     def calc_normal(self, intersect_pos):
-        # intersection is on the upper x-parallel plane
+        # TODO: do we need EPSILON?
         if abs((intersect_pos[0] - self.position[0]) - self.scale / 2) < EPSILON:
             return np.array((1, 0, 0))
-        # intersection is on the lower x-parallel plane
+
         elif abs((self.position[0] - intersect_pos[0]) - self.scale / 2) < EPSILON:
             return np.array((-1, 0, 0))
-        # intersection is on the upper y-parallel plane
+
         elif abs((intersect_pos[1] - self.position[1]) - self.scale / 2) < EPSILON:
             return np.array((0, 1, 0))
-        # intersection is on the lower y-parallel plane
+
         elif abs((self.position[1] - intersect_pos[1]) - self.scale / 2) < EPSILON:
             return np.array((0, -1, 0))
-        # intersection is on the upper z-parallel plane
+
         elif abs((intersect_pos[2] - self.position[2]) - self.scale / 2) < EPSILON:
             return np.array((0, 0, 1))
-        # intersection is on the lower z-parallel plane
+
         else:
             return np.array((0, 0, -1))

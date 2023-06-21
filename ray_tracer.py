@@ -1,4 +1,5 @@
 import argparse
+import random
 from typing import Optional
 
 from PIL import Image
@@ -13,7 +14,7 @@ from scene_settings import SceneSettings
 from surfaces.cube import Cube
 from surfaces.infinite_plane import InfinitePlane
 from surfaces.sphere import Sphere
-from utils import normalize
+from utils import normalize, perpendicular
 
 
 def parse_scene_file(file_path):
@@ -57,7 +58,7 @@ def save_image(image_array, output_image):
     image = Image.fromarray(np.uint8(image_array))
 
     # Save the image to a file
-    image.save("scenes/" + output_image)
+    image.save(output_image)
 
 
 class Scene:
@@ -81,30 +82,19 @@ class Scene:
 
         self.screen_center = self.camera.position + self.camera.screen_distance * self.towards  # P_c
 
-        # Do we need this???
-        Sx = -self.towards[1]
-        Cx = np.sqrt(1 - np.power(Sx, 2))
-        Sy = -self.towards[0] / Cx
-        Cy = self.towards[2] / Cx
-        M = np.array([[Cy, 0, Sy],
-                           [-Sx * Sy, Cx, Sx * Cy],
-                           [-Cx * Sy, -Sx, Cx * Cy]])
-        self.Vx = normalize(np.array([1, 0, 0]) @ M)  # why not self.right ?
-        self.Vy = normalize(np.array([0, -1, 0]) @ M)  # why not self.up ?
-
         self.left_bottom = (
             self.screen_center
-            - self.camera.screen_width/2 * self.Vx   # why not self.right ?
-            - self.camera.screen_height/2 * self.Vy  # why not self.up ?
+            - self.camera.screen_width/2 * self.right   # why not self.right ?
+            - self.camera.screen_height/2 * self.up  # why not self.up ?
         )  # P_0
 
-        pixel_height = self.camera.screen_height / height  # Rx
-        pixel_width = self.camera.screen_width / width  # Ry
-        self.RyVy = pixel_height * self.Vy  # vertical
-        self.RxVx = pixel_width * self.Vx  # horizontal
+        pixel_height = self.camera.screen_height / height  # Ry
+        pixel_width = self.camera.screen_width / width  # Rx
+        self.Vy = pixel_height * self.up  # vertical
+        self.Vx = pixel_width * self.right  # horizontal
 
     def construct_ray_through_pixel(self, i, j) -> Ray:
-        P = self.left_bottom + i * self.RyVy + j * self.RxVx
+        P = self.left_bottom + i * self.Vy + j * self.Vx
         ray = Ray(self.camera.position, normalize(P - self.camera.position))
         return ray
 
@@ -129,8 +119,7 @@ class Scene:
         return None
 
     def get_color(self, hit: Optional[Intersection], rec_depth=0) -> list[float]:
-        # print(f"rec_depth: {rec_depth}")
-        if hit is None or rec_depth == 2:  #self.scene_settings.max_recursions:
+        if hit is None or rec_depth == self.scene_settings.max_recursions:
             return self.scene_settings.background_color
 
         diffuse = np.zeros(3, dtype=float)
@@ -142,12 +131,13 @@ class Scene:
         N = hit.get_normal()  # N
 
         for light in self.lights:
-            light_intensity = self.get_light_intensity(light, hit)  # I_L
             L = normalize(hit.intersect_pos - light.position)  # L
             NL = np.maximum(np.dot(N, -L), 0)  # NL
             R = normalize(L + 2 * NL * N)
-            V = -hit.ray.V  # should be equivalent to self.camera.position - hit.intersect_pos
+            V = -hit.ray.V
             RV = np.maximum(np.dot(R, V), 0)
+
+            light_intensity = self.get_light_intensity(hit, light, L)  # I_L
 
             diffuse += light.color * light_intensity * NL
             specular += light.color * light_intensity * (RV ** material.shininess) * light.specular_intensity
@@ -159,34 +149,52 @@ class Scene:
         if material.reflection_color.sum() > 0:
             reflection_vector = normalize(hit.ray.V - 2 * N * np.dot(hit.ray.V, N))
             reflection_ray = Ray(hit.intersect_pos, reflection_vector)
-            reflection_hit = self.find_intersection(reflection_ray, hit.surface)  # we need to ignore current material
+            reflection_hit = self.find_intersection(reflection_ray, hit.surface)  # we ignore current surface
             reflection = self.get_color(reflection_hit, rec_depth + 1) * material.reflection_color
 
         # transparency
         if material.transparency > 0:
             transparency_ray = Ray(hit.intersect_pos, hit.ray.V)
-            transparency_hit = self.find_intersection(transparency_ray, hit.surface)
+            transparency_hit = self.find_intersection(transparency_ray, hit.surface)  # we ignore current surface
             transparency = self.get_color(transparency_hit, rec_depth + 1) * material.transparency
 
-        # print(f"total: {transparency * material.transparency + (diffuse + specular) * (1 - material.transparency) + reflection} "
-        #       f"diffuse: {diffuse}, specular: {specular} reflection: {reflection} transparency: {transparency}")
         return transparency * material.transparency + (diffuse + specular) * (1 - material.transparency) + reflection
 
-    def get_light_intensity(self, light, hit):
-        return 0.5
+    def get_light_intensity(self, hit, light, light_ray):
+        N = self.scene_settings.root_number_shadow_rays
+
+        # Find a plane perpendicular to the ray
+        Px = perpendicular(light_ray)
+        Py = normalize(np.cross(Px, light_ray))
+
+        # Define rectangle on that plane
+        left_bottom = light.position - (light.radius / 2) * Px - (light.radius / 2) * Py
+        cell_size = light.radius / N
+        Px *= cell_size
+        Py *= cell_size
+
+        # Shoot a ray from the center of each cell
+        shadow_count = 0
+        for i in range(N):
+            for j in range(N):
+                shadow_pos = left_bottom + Px * (i + random.random()) + Py * (j + random.random())
+                shadow_vector = normalize(hit.intersect_pos - shadow_pos)
+                shadow_ray = Ray(shadow_pos, shadow_vector)
+                shadow_hit = self.find_intersection(shadow_ray)
+                if shadow_hit.surface is hit.surface:  # np.linalg.norm(shadow_hit.intersect_pos - hit.intersect_pos) < EPSILON
+                    shadow_count += 1
+
+        return 1 - light.shadow_intensity + light.shadow_intensity * (shadow_count / (N ** 2))
 
     def ray_tracing(self):
         image_array = np.zeros((self.height, self.width, 3), dtype=float)
 
         for i in range(self.width):
+            print(i)
             for j in range(self.height):
-                print(i, j)
                 ray = self.construct_ray_through_pixel(i, j)
-                # print(f"ray: starting_position: {ray.starting_position}, V: {ray.V}")
                 hit = self.find_intersection(ray)
-                # print(f"hit: intersect_pos: {hit.intersect_pos}, t: {hit.t}, obj: {type(hit.obj)}")
                 image_array[i, j] = self.get_color(hit)
-                # print(f"color: {image_array[i, j]}")
 
         return image_array
 
