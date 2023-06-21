@@ -60,6 +60,7 @@ def save_image(image_array):
 class Scene:
     def __init__(self, camera, scene_settings, objects, width, height):
         self.camera = camera
+        # we set here because camera doesn't get (width, height) in init, and they are needed for height
         self.camera.set_screen_height(width, height)
         self.scene_settings = scene_settings
         self.objects = objects
@@ -71,42 +72,37 @@ class Scene:
         self.width = width
         self.height = height
 
+        # camera.towards == self.towards, duplicated until we decide the best place for it
         self.towards = normalize(camera.look_at - camera.position)
-        self.right = normalize(np.cross(camera.up_vector, camera.towards))  # horizontal
-        self.up = np.cross(self.right, camera.towards)  # vertical
+        self.right = normalize(np.cross(camera.up_vector, self.towards))
+        self.up = normalize(np.cross(self.right, self.towards))
 
-        self.screen_center = self.camera.position + self.camera.screen_distance * self.camera.towards
+        self.screen_center = self.camera.position + self.camera.screen_distance * self.towards  # Pc
 
-        self.left_bottom = (
-                self.screen_center -
-                (self.camera.screen_width/2 * self.right) -
-                (camera.screen_height/2 * self.up)
-        )
-
+        # Do we need this???
         Sx = -self.towards[1]
         Cx = np.sqrt(1 - np.power(Sx, 2))
         Sy = -self.towards[0] / Cx
         Cy = self.towards[2] / Cx
-
-        self.M = np.array([[Cy, 0, Sy],
+        M = np.array([[Cy, 0, Sy],
                            [-Sx * Sy, Cx, Sx * Cy],
                            [-Cx * Sy, -Sx, Cx * Cy]])
-        self.Vx = normalize(np.array([1, 0, 0]) @ self.M)
-        self.Vy = normalize(np.array([0, -1, 0]) @ self.M)
+        self.Vx = normalize(np.array([1, 0, 0]) @ M)  # why not self.right ?
+        self.Vy = normalize(np.array([0, -1, 0]) @ M)  # why not self.up ?
 
-        self.P0 = (
-                self.screen_center
-                - self.camera.screen_width/2 * self.camera.Vx
-                - self.camera.screen_height/2 * self.camera.Vy
-        )  # left bottom corner pixel
+        self.left_bottom = (
+            self.screen_center
+            - self.camera.screen_width/2 * self.Vx   # why not self.right ?
+            - self.camera.screen_height/2 * self.Vy  # why not self.up ?
+        )  # P0
 
-        pixel_height = self.camera.screen_height / height
-        pixel_width = self.camera.screen_width / width
-        self.vertical = pixel_height * self.camera.Vy
-        self.horizontal = pixel_width * self.camera.Vx
+        pixel_height = self.camera.screen_height / height  # Rx
+        pixel_width = self.camera.screen_width / width  # Ry
+        self.RyVy = pixel_height * self.Vy  # vertical
+        self.RxVx = pixel_width * self.Vx  # horizontal
 
     def construct_ray_through_pixel(self, i, j):
-        P = self.P0 + i * self.vertical + j * self.horizontal
+        P = self.left_bottom + i * self.RyVy + j * self.RxVx
         ray = Ray(self.camera.position, normalize(P - self.camera.position))
         return ray
 
