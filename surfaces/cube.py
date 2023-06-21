@@ -48,7 +48,6 @@ class Cube:
         return t_min
 
     def calc_normal(self, intersect_pos):
-        # TODO: do we need EPSILON?
         if abs((intersect_pos[0] - self.position[0]) - self.scale / 2) < EPSILON:
             return np.array((1, 0, 0))
 

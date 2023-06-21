@@ -181,8 +181,8 @@ class Scene:
                 shadow_vector = normalize(hit.intersect_pos - shadow_pos)
                 shadow_ray = Ray(shadow_pos, shadow_vector)
                 shadow_hit = self.find_intersection(shadow_ray)
+                # Count how many rays hit required point on the surface
                 if np.linalg.norm(shadow_hit.intersect_pos - hit.intersect_pos) < EPSILON:
-                #if shadow_hit.surface is hit.surface:
                     shadow_count += 1
 
         return 1 - light.shadow_intensity + light.shadow_intensity * (shadow_count / (N ** 2))

@@ -1,6 +1,6 @@
 import numpy as np
 
-
+# We use epsilon when comparing vectors since they can differ a bit due to rounding
 EPSILON = 10**-9
 
 
