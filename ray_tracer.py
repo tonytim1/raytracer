@@ -1,7 +1,10 @@
 import argparse
+from typing import Optional
+
 from PIL import Image
 import numpy as np
 
+from Intersection import Intersection
 from Ray import Ray
 from camera import Camera
 from light import Light
@@ -77,7 +80,7 @@ class Scene:
         self.right = normalize(np.cross(camera.up_vector, self.towards))
         self.up = normalize(np.cross(self.right, self.towards))
 
-        self.screen_center = self.camera.position + self.camera.screen_distance * self.towards  # Pc
+        self.screen_center = self.camera.position + self.camera.screen_distance * self.towards  # P_c
 
         # Do we need this???
         Sx = -self.towards[1]
@@ -94,23 +97,81 @@ class Scene:
             self.screen_center
             - self.camera.screen_width/2 * self.Vx   # why not self.right ?
             - self.camera.screen_height/2 * self.Vy  # why not self.up ?
-        )  # P0
+        )  # P_0
 
         pixel_height = self.camera.screen_height / height  # Rx
         pixel_width = self.camera.screen_width / width  # Ry
         self.RyVy = pixel_height * self.Vy  # vertical
         self.RxVx = pixel_width * self.Vx  # horizontal
 
-    def construct_ray_through_pixel(self, i, j):
+    def construct_ray_through_pixel(self, i, j) -> Ray:
         P = self.left_bottom + i * self.RyVy + j * self.RxVx
         ray = Ray(self.camera.position, normalize(P - self.camera.position))
         return ray
 
-    def find_intersection(self, ray):
-        return
+    def find_intersection(self, ray: Ray, from_obj=None) -> Optional[Intersection]:
+        min_t = None
+        min_obj = None
 
-    def get_color(self, hit):
-        return
+        for obj in self.spheres + self.planes + self.cubes:
+            if obj is from_obj:  # in case of reflection/transparency we dont want to pick same obj again
+                continue
+
+            t = obj.intersect(ray)
+            if t is not None:
+                if min_t is None or t < min_t:
+                    min_t, min_obj = t, obj
+
+        # Add recursion if material is reflective or transparent ???
+
+        if min_t is not None:
+            return Intersection(min_t, min_obj, ray)
+
+        return None
+
+    def get_color(self, hit: Optional[Intersection], rec_depth=0) -> list[float]:
+        if hit is None or rec_depth == self.scene_settings.max_recursions:
+            return self.scene_settings.background_color
+
+        diffuse = np.zeros(3, dtype=float)
+        specular = np.zeros(3, dtype=float)
+        reflection = None
+        transparency = self.scene_settings.background_color
+
+        material = self.materials[hit.obj.material_idx]
+        N = hit.get_normal()  # N
+
+        for light in self.lights:
+            light_intensity = self.get_light_intensity(light, hit)  # I_L
+            L = normalize(hit.intersect_pos - light.position)  # L
+            NL = np.maximum(np.dot(N, -L), 0)  # NL
+            R = normalize(L + 2 * NL * N)
+            V = -hit.ray.V  # should be equivalent to self.camera.position - hit.intersect_pos
+            RV = np.maximum(np.dot(R, V), 0)
+
+            diffuse += light.color * light_intensity * NL
+            specular += light.color * light_intensity * (RV ** material.shininess) * light.specular_intensity
+
+        diffuse *= material.diffuse_color
+        specular *= material.specular_color
+
+        # reflection
+        if material.reflection_color.sum() > 0:
+            reflection_vector = normalize(hit.ray.V - 2 * N * np.dot(hit.ray.V, N))
+            reflection_ray = Ray(hit.intersect_pos, reflection_vector)
+            reflection_hit = self.find_intersection(reflection_ray, hit.obj)  # we need to ignore current material
+            reflection = self.get_color(reflection_hit, rec_depth + 1) * material.reflection_color
+
+        # transparency
+        if material.transparency > 0:
+            transparency_ray = Ray(hit.intersect_pos, hit.ray.V)
+            transparency_hit = self.find_intersection(transparency_ray, hit.obj)
+            transparency = self.get_color(transparency_hit, rec_depth + 1) * material.transparency
+
+        return transparency * material.transparency + (diffuse + specular) * (1 - material.transparency) + reflection
+
+    def get_light_intensity(self, light, hit):
+        return 1
 
     def ray_tracing(self):
         image_array = np.zeros((self.height, self.width, 3), dtype=float)
