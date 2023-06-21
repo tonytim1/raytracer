@@ -14,7 +14,7 @@ from scene_settings import SceneSettings
 from surfaces.cube import Cube
 from surfaces.infinite_plane import InfinitePlane
 from surfaces.sphere import Sphere
-from utils import normalize, perpendicular
+from utils import normalize, get_perpendicular_plane, EPSILON
 
 
 def parse_scene_file(file_path):
@@ -111,8 +111,6 @@ class Scene:
                 if min_t is None or t < min_t:
                     min_t, min_surface = t, surface
 
-        # Add recursion if material is reflective or transparent ???
-
         if min_t is not None:
             return Intersection(min_t, min_surface, ray)
 
@@ -164,24 +162,27 @@ class Scene:
         N = self.scene_settings.root_number_shadow_rays
 
         # Find a plane perpendicular to the ray
-        Px = perpendicular(light_ray)
-        Py = normalize(np.cross(Px, light_ray))
+        P_x = get_perpendicular_plane(light_ray)
+        if P_x is None:
+            return 1 - light.shadow_intensity
+        P_y = normalize(np.cross(P_x, light_ray))
 
         # Define rectangle on that plane
-        left_bottom = light.position - (light.radius / 2) * Px - (light.radius / 2) * Py
+        left_bottom = light.position - (light.radius / 2) * P_x - (light.radius / 2) * P_y
         cell_size = light.radius / N
-        Px *= cell_size
-        Py *= cell_size
+        P_x *= cell_size
+        P_y *= cell_size
 
         # Shoot a ray from the center of each cell
         shadow_count = 0
         for i in range(N):
             for j in range(N):
-                shadow_pos = left_bottom + Px * (i + random.random()) + Py * (j + random.random())
+                shadow_pos = left_bottom + P_x * (i + random.random()) + P_y * (j + random.random())
                 shadow_vector = normalize(hit.intersect_pos - shadow_pos)
                 shadow_ray = Ray(shadow_pos, shadow_vector)
                 shadow_hit = self.find_intersection(shadow_ray)
-                if shadow_hit.surface is hit.surface:  # np.linalg.norm(shadow_hit.intersect_pos - hit.intersect_pos) < EPSILON
+                if np.linalg.norm(shadow_hit.intersect_pos - hit.intersect_pos) < EPSILON:
+                #if shadow_hit.surface is hit.surface:
                     shadow_count += 1
 
         return 1 - light.shadow_intensity + light.shadow_intensity * (shadow_count / (N ** 2))
@@ -215,7 +216,8 @@ def main():
     image_array = scene.ray_tracing()
 
     # Save the output image
-    save_image(image_array * 255, args.output_image)
+    image_array = np.clip(image_array, 0, 1) * 255
+    save_image(image_array, args.output_image)
 
 
 if __name__ == '__main__':
